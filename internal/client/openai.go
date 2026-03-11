@@ -47,6 +47,10 @@ type ChatCompletionRequest struct {
 	Stream        bool                    `json:"stream,omitempty"`
 	StreamOptions *StreamOptions          `json:"stream_options,omitempty"`
 	Thinking      *ThinkingOptions        `json:"thinking,omitempty"`
+	MaxTokens     int                     `json:"max_tokens,omitempty"`
+    Temperature   float64                 `json:"temperature,omitempty"`
+    TopP          float64                 `json:"top_p,omitempty"`
+	TopK          int                     `json:"top_k,omitempty"`
 }
 
 // ChatCompletionResponse represents the response from chat completion
@@ -122,6 +126,10 @@ type OpenAIClient struct {
 	Provider   string
 	Thinking   bool // 是否开启 thinking 模式
 	logger     *logger.Logger
+	MaxTokens     int
+    Temperature   float64
+    TopP          float64
+	TopK          int
 }
 
 // NewOpenAIClient 根据配置创建 OpenAI 客户端
@@ -155,6 +163,10 @@ func NewOpenAIClient(config types.Input) *OpenAIClient {
 		Provider: "openai",
 		Thinking: config.Thinking,
 		logger:   nil,
+		MaxTokens: config.MaxTokens,  
+		Temperature:  config.Temperature,
+		TopP:     config.TopP,     
+		TopK:     config.TopK,    
 	}
 }
 
@@ -197,6 +209,22 @@ func (c *OpenAIClient) Request(prompt string, stream bool) (*ResponseMetrics, er
 		reqBody.Thinking = &ThinkingOptions{
 			Type: "enabled",
 		}
+	}
+
+	if c.MaxTokens != -1 && c.MaxTokens >= 0 {
+		reqBody.MaxTokens = c.MaxTokens
+	}
+
+	if c.Temperature != -1.0 && c.Temperature >= 0.0 {
+		reqBody.Temperature = c.Temperature
+	}
+
+	if c.TopP != -1.0 && c.TopP >= 0.0 && c.TopP <= 1.0 {
+		reqBody.TopP = c.TopP
+	}
+
+	if c.TopK != -1 && c.TopK >= 0 {
+		reqBody.TopK = c.TopK
 	}
 
 	jsonData, err := json.Marshal(reqBody)

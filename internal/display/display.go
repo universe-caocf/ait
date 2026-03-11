@@ -138,7 +138,7 @@ func (td *Displayer) InitProgress(total int, description string) {
 	)
 }
 
-func (td *Displayer) UpdateProgress(percent float64) {
+func (td *Displayer) UpdateProgress(percent float64, TPS float64, TTFT time.Duration, QPS float64, Failed int) {
 	td.mu.Lock()
 	defer td.mu.Unlock()
 
@@ -146,6 +146,10 @@ func (td *Displayer) UpdateProgress(percent float64) {
 		// 计算当前进度值（基于进度条的最大值）
 		current := int(percent * float64(td.progressBar.GetMax()) / 100.0)
 		td.progressBar.Set(current)
+
+		// 更新指标
+		description := fmt.Sprintf("测试进度 | outTPS: %8.2f | TTFT: %v | QPS: %6.2f | Failed: %6d \n", TPS, TTFT, QPS, Failed)
+		td.progressBar.Describe(description)
 	}
 }
 
@@ -189,6 +193,8 @@ func (td *Displayer) ShowErrorsReport(errors []*string) {
 	table := tablewriter.NewTable(
 		os.Stdout,
 		tablewriter.WithEastAsian(false),
+		// tablewriter.WithAutoWrapText(true),
+		// tablewriter.WithWrapTextWidth(80),
 	)
 
 	table.Header("序号", "错误详情", "出现次数")
@@ -198,8 +204,8 @@ func (td *Displayer) ShowErrorsReport(errors []*string) {
 	for errorMsg, count := range errorCounts {
 		// 如果错误信息太长，进行适当的截断和格式化
 		displayMsg := errorMsg
-		if len(displayMsg) > 100 {
-			displayMsg = displayMsg[:97] + "..."
+		if len(displayMsg) > 300 {
+			displayMsg = displayMsg[:299] + "..."
 		}
 		table.Append(fmt.Sprintf("%d", index), displayMsg, fmt.Sprintf("%d", count))
 		index++

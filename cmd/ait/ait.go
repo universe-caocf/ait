@@ -178,7 +178,7 @@ func printErrorMessages(protocol string) {
 }
 
 // createRunnerConfig 创建runner配置
-func createRunnerConfig(protocol, baseUrl, apiKey, model string, promptSource *prompt.PromptSource, concurrency, count, timeout int, stream, report, log, thinking bool) types.Input {
+func createRunnerConfig(protocol, baseUrl, apiKey, model string, promptSource *prompt.PromptSource, concurrency, count, timeout int, stream, report, log, thinking bool, intervalReport int, maxTokens int, temperature float64, topP float64, topK int) types.Input {
 	return types.Input{
 		Protocol:     protocol,
 		BaseUrl:      baseUrl,
@@ -191,7 +191,12 @@ func createRunnerConfig(protocol, baseUrl, apiKey, model string, promptSource *p
 		Report:       report,
 		Timeout:      time.Duration(timeout) * time.Second,
 		Log:          log,
+		IntervalReport:  intervalReport,
 		Thinking:     thinking,
+		MaxTokens:    maxTokens,
+		Temperature:  temperature,
+		TopP:         topP,
+		TopK:         topK,
 	}
 }
 
@@ -214,12 +219,13 @@ func processModelExecution(taskID string, modelName string, config types.Input, 
 		percent := float64(currentCompleted) / float64(totalRequests) * 100.0
 
 		// 类型断言来调用UpdateProgress方法
-		displayer.UpdateProgress(percent)
+		displayer.UpdateProgress(percent, sd.AvgTPS, sd.AvgTTFT, sd.QPS, sd.FailedCount)
 
 		// 保存最新的错误信息（覆盖之前的，确保获取最完整的错误列表）
 		currentModelErrors = make([]string, len(sd.ErrorMessages))
 		copy(currentModelErrors, sd.ErrorMessages)
 	})
+
 	if err != nil {
 		return nil, nil, err
 	}
@@ -285,7 +291,7 @@ func generateReportsIfEnabled(reportFlag bool, results []*types.ReportData) erro
 }
 
 // executeModelsTestSuite 执行多个模型的测试套件
-func executeModelsTestSuite(taskID string, modelList []string, finalProtocol, finalBaseUrl, finalApiKey string, promptSource *prompt.PromptSource, concurrency, count, timeout int, stream, reportFlag, log, thinking bool, displayer *display.Displayer) ([]*types.ReportData, []string, error) {
+func executeModelsTestSuite(taskID string, modelList []string, finalProtocol, finalBaseUrl, finalApiKey string, promptSource *prompt.PromptSource, concurrency, count, timeout int, stream, reportFlag, log, thinking bool, intervalReport int, maxTokens int, temperature float64, topP float64, topK int, displayer *display.Displayer) ([]*types.ReportData, []string, error) {
 	// 用于收集所有错误信息
 	var allErrors []string
 
@@ -301,7 +307,7 @@ func executeModelsTestSuite(taskID string, modelList []string, finalProtocol, fi
 	completedRequests := 0
 
 	for _, modelName := range modelList {
-		config := createRunnerConfig(finalProtocol, finalBaseUrl, finalApiKey, modelName, promptSource, concurrency, count, timeout, stream, reportFlag, log, thinking)
+		config := createRunnerConfig(finalProtocol, finalBaseUrl, finalApiKey, modelName, promptSource, concurrency, count, timeout, stream, reportFlag, log, thinking, intervalReport, maxTokens, temperature, topP, topK)
 
 		result, currentModelErrors, err := processModelExecution(taskID, modelName, config, displayer, completedRequests, totalRequests)
 		if err != nil {
@@ -344,9 +350,14 @@ func main() {
 	stream := flag.Bool("stream", true, "是否开启流模式")
 	concurrency := flag.Int("concurrency", 3, "并发数")
 	reportFlag := flag.Bool("report", false, "是否生成报告文件")
+	intervalReport := flag.Int("interval-report", 60, "定期生成报告间隔（分钟）")
 	timeout := flag.Int("timeout", 300, "请求超时时间(秒)")
 	logFlag := flag.Bool("log", false, "是否开启详细日志记录")
 	thinking := flag.Bool("thinking", false, "是否开启 thinking 模式")
+	maxtokens := flag.Int("max-tokens", -1, "最大生成token数")
+	temperature := flag.Float64("temperature", -1.0, "压测请求采样温度")
+	topP := flag.Float64("top-p", -1.0, "压测请求核采样概率")
+	topK := flag.Int("top-k", -1, "压测请求top_k采样")
 	flag.Parse()
 
 	// 如果指定了 --version，显示版本信息后退出
@@ -433,7 +444,8 @@ func main() {
 	// 执行多个模型的测试套件
 	allResults, allErrors, err := executeModelsTestSuite(
 		taskID, modelList, finalProtocol, finalBaseUrl, finalApiKey, promptSource,
-		*concurrency, *count, *timeout, *stream, *reportFlag, *logFlag, *thinking, displayer,
+		*concurrency, *count, *timeout, *stream, *reportFlag, *logFlag, *thinking, *intervalReport,
+		*maxtokens, *temperature, *topP, *topK, displayer,
 	)
 	if err != nil {
 		fmt.Printf("执行测试套件失败: %v\n", err)

@@ -7,7 +7,7 @@ import (
 
 // PromptSource 需要前向声明，实际定义在 prompt 包中
 type PromptSource interface {
-	GetRandomContent() string
+	GetRandomContent() (string, string)
 	GetContentByIndex(index int) string
 	Count() int
 }
@@ -26,6 +26,11 @@ type Input struct {
 	Report       bool          // 是否生成报告文件
 	Timeout      time.Duration // 请求超时时间
 	Log          bool          // 是否开启详细日志记录
+	IntervalReport	 int       // 是否开启定期报告 
+	MaxTokens    int           // 最大生成token数
+	Temperature  float64       // 压测请求采样温度
+	TopP         float64       // 压测请求核采样概率
+	TopK         int           // 压测请求top_k采样
 }
 
 // StatsData 实时测试统计数据 - runner 内部使用的统计结构
@@ -55,6 +60,12 @@ type StatsData struct {
 	// 测试控制
 	StartTime   time.Time     // 测试开始时间
 	ElapsedTime time.Duration // 已经过时间
+
+	// ===== Realtime Metrics =====
+	QPS        float64       // Queries Per Second
+	AvgTTFT    time.Duration // Average Time To First Token
+	AvgTotalTime time.Duration // Average request latency
+	AvgTPS     float64       // Tokens Per Second
 }
 
 // ReportData runner 返回的统一测试结果数据结构
@@ -115,6 +126,10 @@ type ReportData struct {
 	AvgTotalThroughputTPS float64 `json:"avg_total_throughput_tps"` // 平均吞吐 TPS (输入+输出 tokens per second)
 	MinTotalThroughputTPS float64 `json:"min_total_throughput_tps"` // 最小吞吐 TPS
 	MaxTotalThroughputTPS float64 `json:"max_total_throughput_tps"` // 最大吞吐 TPS
+
+	SystemOutputTPS float64 `json:"system_output_tps"` // 系统平均输出吞吐 TPS
+	SystemTotalTPS float64 `json:"system_total_tps"` // 系统平均输入输出吞吐 TPS
+	TotalOutputTokens int `json:"total_output_tokens"` // 总输出tokens
 
 	// 标准差指标 - 统计结果
 	StdDevTotalTime        time.Duration `json:"stddev_total_time"`          // 总耗时标准差

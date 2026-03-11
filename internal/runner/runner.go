@@ -5,11 +5,13 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
 	"github.com/yinxulai/ait/internal/client"
 	"github.com/yinxulai/ait/internal/logger"
 	"github.com/yinxulai/ait/internal/types"
 	"github.com/yinxulai/ait/internal/upload"
+	"os"
+	"fmt"
+	"encoding/json" 
 )
 
 // Runner 性能测试执行器
@@ -19,6 +21,20 @@ type Runner struct {
 	upload *upload.Uploader
 	client client.ModelClient
 }
+
+// 实时性能指标
+type LiveStats struct {
+	completed int64
+	failed    int64
+
+	sumTTFT       int64
+	sumTotalTime  int64
+	sumOutputTokens int64
+
+	lastCompleted int64
+	lastTime      time.Time
+}
+
 
 // NewRunner 创建新的性能测试执行器
 func NewRunner(taskID string, config types.Input) (*Runner, error) {
@@ -59,7 +75,7 @@ func (r *Runner) Run() (*types.ReportData, error) {
 			defer func() { <-ch }()
 
 			// 获取当前请求使用的prompt
-			currentPrompt := r.input.PromptSource.GetRandomContent()
+			currentPrompt, _ := r.input.PromptSource.GetRandomContent()
 			
 			metrics, err := r.client.Request(currentPrompt, r.input.Stream)
 			if err != nil {
@@ -87,15 +103,75 @@ func (r *Runner) Run() (*types.ReportData, error) {
 	return r.calculateResult(results, elapsed), nil
 }
 
+
+func appendJSONL(filename string, data interface{}) {
+    f, err := os.OpenFile(filename,
+        os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "open file error: %v\n", err)
+        return
+    }
+    defer f.Close()
+
+    enc := json.NewEncoder(f)
+    if err := enc.Encode(data); err != nil {
+        fmt.Fprintf(os.Stderr, "encode json error: %v\n", err)
+    }
+}
+
+
 // RunWithProgress 运行性能测试并实时显示进度
 func (r *Runner) RunWithProgress(progressCallback func(types.StatsData)) (*types.ReportData, error) {
 	var wg sync.WaitGroup
 	results := make([]*client.ResponseMetrics, r.input.Count)
+
+	var resultsMutex sync.Mutex
+
 	start := time.Now()
+
+	var intervalFileName string
+	stopInterval := make(chan bool)
+	if r.input.IntervalReport > 0 {
+		intervalFileName = fmt.Sprintf("ait-interval-%s.jsonl", start.Format("20060102-150405"))
+
+		go func() {
+			intervalDuration := time.Duration(r.input.IntervalReport) * time.Minute
+			ticker := time.NewTicker(intervalDuration)
+			// ticker := time.NewTicker(3 * time.Hour)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ticker.C:
+
+					resultsMutex.Lock()
+					snapshot := make([]*client.ResponseMetrics, len(results))
+					copy(snapshot, results)
+					resultsMutex.Unlock()
+
+					report := r.calculateResult(snapshot, time.Since(start))
+					report.Model = r.input.Model
+					report.BaseUrl = r.input.BaseUrl
+					report.Protocol = r.input.Protocol
+					report.Timestamp = time.Now().Format(time.RFC3339)
+
+					appendJSONL(intervalFileName, report)
+
+				case <-stopInterval:
+					return
+				}
+			}
+		}()
+
+	}
+
 	ch := make(chan int, r.input.Concurrency)
 
 	completed := int64(0)
 	failed := int64(0)
+	live := &LiveStats{
+	lastTime: time.Now(),
+	}
 	var ttfts []time.Duration
 	var totalTimes []time.Duration
 	var dnsTimes []time.Duration
@@ -110,40 +186,59 @@ func (r *Runner) RunWithProgress(progressCallback func(types.StatsData)) (*types
 	// 启动进度更新 goroutine
 	stopProgress := make(chan bool)
 	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
+		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ticker.C:
-				ttftsMutex.Lock()
-				stats := types.StatsData{
-					CompletedCount:    int(atomic.LoadInt64(&completed)),
-					FailedCount:       int(atomic.LoadInt64(&failed)),
-					TTFTs:             make([]time.Duration, len(ttfts)),
-					TotalTimes:        make([]time.Duration, len(totalTimes)),
-					DNSTimes:          make([]time.Duration, len(dnsTimes)),
-					ConnectTimes:      make([]time.Duration, len(connectTimes)),
-					TLSHandshakeTimes: make([]time.Duration, len(tlsHandshakeTimes)),
-					InputTokenCounts:  make([]int, len(inputTokenCounts)),
-					OutputTokenCounts: make([]int, len(outputTokenCounts)),
-					ThinkingTokenCounts: make([]int, len(thinkingTokenCounts)),
-					ErrorMessages:     make([]string, len(errorMessages)),
-					StartTime:         start,
-					ElapsedTime:       time.Since(start),
-				}
-				copy(stats.TTFTs, ttfts)
-				copy(stats.TotalTimes, totalTimes)
-				copy(stats.DNSTimes, dnsTimes)
-				copy(stats.ConnectTimes, connectTimes)
-				copy(stats.TLSHandshakeTimes, tlsHandshakeTimes)
-				copy(stats.InputTokenCounts, inputTokenCounts)
-				copy(stats.OutputTokenCounts, outputTokenCounts)
-				copy(stats.ThinkingTokenCounts, thinkingTokenCounts)
-				copy(stats.ErrorMessages, errorMessages)
-				ttftsMutex.Unlock()
+				now := time.Now()
 
+				total := atomic.LoadInt64(&completed)
+				fail := atomic.LoadInt64(&failed)
+
+				dt := now.Sub(live.lastTime).Seconds()
+				dq := total - live.lastCompleted
+
+				var qps float64
+				if dt > 0 {
+					qps = float64(dq) / dt
+				}
+
+				var avgTTFT time.Duration
+				var avgTotal time.Duration
+				var avgTPS float64
+
+				success := atomic.LoadInt64(&live.completed)
+
+				if success > 0 {
+					avgTTFT = time.Duration(atomic.LoadInt64(&live.sumTTFT) / success)
+					avgTotal = time.Duration(atomic.LoadInt64(&live.sumTotalTime) / success)
+
+					sumTokens := atomic.LoadInt64(&live.sumOutputTokens)
+					elapsed_time := time.Since(start).Seconds()
+					// fmt.Fprintf(os.Stderr, "\n[Debug]: sumOutputTokens: %d, time=%f \n", sumTokens, elapsed_time)
+					
+					if elapsed_time > 0 {
+						avgTPS = float64(sumTokens) / elapsed_time
+					}
+				}
+				stats := types.StatsData{ 
+					CompletedCount: int(total), 
+					FailedCount: int(fail), 
+					QPS: qps, 
+					AvgTTFT: avgTTFT, 
+					AvgTotalTime: avgTotal, 
+					AvgTPS: avgTPS, 
+					StartTime: start, 
+					ElapsedTime: time.Since(start), 
+					} 
+
+				live.lastCompleted = total 
+				live.lastTime = now 
+				
 				progressCallback(stats)
+
 			case <-stopProgress:
 				return
 			}
@@ -158,17 +253,25 @@ func (r *Runner) RunWithProgress(progressCallback func(types.StatsData)) (*types
 			defer func() { <-ch }()
 
 			// 获取当前请求使用的prompt
-			currentPrompt := r.input.PromptSource.GetRandomContent()
+			currentPrompt, fileName := r.input.PromptSource.GetRandomContent()
 			
 			metrics, err := r.client.Request(currentPrompt, r.input.Stream)
 			if err != nil {
 				ttftsMutex.Lock()
-				errorMessages = append(errorMessages, err.Error())
+				errMsg := err.Error()
+				errorMessages = append(errorMessages,errMsg )
 				ttftsMutex.Unlock()
+				fmt.Fprintf(os.Stderr, "\n[ERROR] Request failed: %s\n", errMsg)
+				fmt.Fprintf(os.Stderr, "\n[ERROR] Current time: %s\n", time.Now().Format("2006-01-02 15:04:05.000"))
+				fmt.Fprintf(os.Stderr, "\n[ERROR] Current filename: %s\n", fileName)
 				atomic.AddInt64(&failed, 1)
+				atomic.AddInt64(&live.failed, 1)
 				// 即使有错误，也尝试保存 metrics（如果有的话）
 				if metrics != nil {
+					resultsMutex.Lock()
 					results[idx] = metrics
+					resultsMutex.Unlock()
+
 					// 仍然收集网络性能指标，即使请求失败
 					ttftsMutex.Lock()
 						ttfts = append(ttfts, metrics.TimeToFirstToken)
@@ -184,7 +287,9 @@ func (r *Runner) RunWithProgress(progressCallback func(types.StatsData)) (*types
 				return
 			}
 
+			resultsMutex.Lock()
 			results[idx] = metrics
+			resultsMutex.Unlock()
 
 			ttftsMutex.Lock()
 			ttfts = append(ttfts, metrics.TimeToFirstToken)
@@ -196,16 +301,22 @@ func (r *Runner) RunWithProgress(progressCallback func(types.StatsData)) (*types
 			inputTokenCounts = append(inputTokenCounts, metrics.PromptTokens)
 			thinkingTokenCounts = append(thinkingTokenCounts, metrics.ThinkingTokens)
 			ttftsMutex.Unlock()
+								
+			atomic.AddInt64(&live.sumTTFT, metrics.TimeToFirstToken.Nanoseconds())
+			atomic.AddInt64(&live.sumTotalTime, metrics.TotalTime.Nanoseconds())
+			atomic.AddInt64(&live.sumOutputTokens, int64(metrics.CompletionTokens))
 
 			if metrics.ErrorMessage == "" && r.upload != nil {
 				r.upload.UploadReport(r.taskID, metrics, r.input)
 			}
 			
 			atomic.AddInt64(&completed, 1)
+			atomic.AddInt64(&live.completed, 1)
 		}(i)
 	}
 	wg.Wait()
 	close(stopProgress)
+	close(stopInterval)
 	elapsed := time.Since(start)
 
 	// 最后一次进度更新
@@ -630,6 +741,10 @@ func (r *Runner) calculateResult(results []*client.ResponseMetrics, totalTime ti
 		AvgTotalThroughputTPS: avgTotalThroughputTPS,
 		MinTotalThroughputTPS: minTotalThroughputTPS,
 		MaxTotalThroughputTPS: maxTotalThroughputTPS,
+
+		SystemOutputTPS: float64(sumOutputTokens) / totalTime.Seconds(),
+		SystemTotalTPS: float64(sumInputTokens + sumOutputTokens) / totalTime.Seconds(),
+		TotalOutputTokens: sumOutputTokens,
 		// 标准差指标
 		StdDevTotalTime:        stdDevTotalTime,
 		StdDevTTFT:             stdDevTTFT,

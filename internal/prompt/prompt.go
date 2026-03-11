@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+	// "sync"
+	"sync/atomic"
 )
 
 // PromptSource 表示prompt的来源信息
@@ -18,6 +20,9 @@ type PromptSource struct {
 	Contents       []string // prompt内容列表（仅用于非文件内容）
 	DisplayText    string   // 用于显示的文本
 	ShouldTruncate bool     // 是否需要截断显示（对于已经包含长度信息的内容，不需要再次处理）
+
+	CurrentIndex int64  // 新增：顺序读取的位置
+	// mutex sync.Mutex // 用于保护currentIndex的并发安全
 }
 
 // LoadPrompts 解析prompt参数，只处理字符串内容
@@ -95,49 +100,66 @@ func loadMultipleFiles(pattern string) (*PromptSource, error) {
 		Contents:       nil, // 不预加载内容
 		DisplayText:    fmt.Sprintf("文件: %s (%d个)", pattern, len(filePaths)),
 		ShouldTruncate: false, // 文件显示不需要截断
+
 	}, nil
 }
 
 // GetRandomContent 随机获取一个prompt内容
-func (ps *PromptSource) GetRandomContent() string {
+func (ps *PromptSource) GetRandomContent() (string, string) {
 	// 如果不是文件源，直接返回内容
 	if !ps.IsFile {
 		if len(ps.Contents) == 0 {
-			return ""
+			return "", ""
 		}
 		if len(ps.Contents) == 1 {
-			return ps.Contents[0]
+			return ps.Contents[0], ""
 		}
 		
 		// 使用当前时间和进程ID作为种子的随机数生成器
 		r := rand.New(rand.NewSource(time.Now().UnixNano() + int64(os.Getpid())))
 		index := r.Intn(len(ps.Contents))
-		return ps.Contents[index]
+		return ps.Contents[index], ""
 	}
 
 	// 文件源：随机选择一个文件路径并读取内容
 	if len(ps.FilePaths) == 0 {
-		return ""
+		return "", ""
 	}
 	
 	var filePath string
 	if len(ps.FilePaths) == 1 {
 		filePath = ps.FilePaths[0]
 	} else {
-		// 使用当前时间和进程ID作为种子的随机数生成器
-		r := rand.New(rand.NewSource(time.Now().UnixNano() + int64(os.Getpid())))
-		index := r.Intn(len(ps.FilePaths))
+		// // 使用当前时间和进程ID作为种子的随机数生成器
+		// r := rand.New(rand.NewSource(time.Now().UnixNano() + int64(os.Getpid())))
+		// index := r.Intn(len(ps.FilePaths))
+		// filePath = ps.FilePaths[index]
+
+
+		// ps.mutex.Lock()
+		// index := ps.CurrentIndex
+		// ps.CurrentIndex++
+		// ps.mutex.Unlock()
+
+		// 原子增加 CurrentIndex
+		index := atomic.AddInt64(&ps.CurrentIndex, 1) - 1
+		index = index % int64(len(ps.FilePaths))
+
 		filePath = ps.FilePaths[index]
+		// fmt.Fprintf(os.Stderr, "\n[AIT] 顺序使用文件[%d/%d]: %s\n", index+1, len(ps.FilePaths), filePath)
 	}
 	
 	// 读取文件内容
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "警告: 读取文件失败 %s: %v\n", filePath, err)
-		return ""
+		return "", ""
 	}
+	// fmt.Fprintf(os.Stderr, "当前文件名： %s", filePath)
+	// fmt.Fprintf(os.Stderr, "当前文件内容：\n%s\n", string(content))
+	// fmt.Fprintf(os.Stderr, "==================================================")
 	
-	return string(content)
+	return string(content), string(filePath)
 }
 
 // GetContentByIndex 根据索引获取prompt内容
@@ -145,21 +167,24 @@ func (ps *PromptSource) GetContentByIndex(index int) string {
 	// 如果不是文件源，直接返回内容
 	if !ps.IsFile {
 		if index < 0 || index >= len(ps.Contents) {
-			return ps.GetRandomContent()
+			content0, _ := ps.GetRandomContent()
+			return content0
 		}
 		return ps.Contents[index]
 	}
 
 	// 文件源：根据索引读取对应文件
 	if index < 0 || index >= len(ps.FilePaths) {
-		return ps.GetRandomContent()
+		content0, _ := ps.GetRandomContent()
+		return content0
 	}
 	
 	filePath := ps.FilePaths[index]
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "警告: 读取文件失败 %s: %v\n", filePath, err)
-		return ps.GetRandomContent()
+		content0, _ := ps.GetRandomContent()
+		return content0
 	}
 	
 	return string(content)
@@ -173,7 +198,7 @@ func (ps *PromptSource) Count() int {
 	return len(ps.Contents)
 }
 
-// LoadPromptsFromPattern 递归加载目录下匹配模式的文件
+// LoadPromptsFromPattern 递归加载目录下匹配模式的文件 -- 目前好像未使用
 func LoadPromptsFromPattern(pattern string) (*PromptSource, error) {
 	var filePaths []string
 
