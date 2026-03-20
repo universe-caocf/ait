@@ -1,0 +1,69 @@
+runner:
+  command: ["go", "run", "./cmd/ait"]
+  workdir: "."
+  env:
+    # OPENAI_API_KEY: "sk-xxx"
+    # OPENAI_BASE_URL: "https://api.openai.com/v1"
+  report_pattern: "ait-report-*.json"
+
+history:
+  output: "benchmark_history.csv"
+  state_file: ".ait_report_ingest_state.json"
+  fields:
+    - timestamp
+    - model
+    - protocol
+    - base_url
+    - target_ip
+    - total_requests
+    - concurrency
+    - is_stream
+    - is_thinking
+    - success_rate
+    - error_rate
+    - avg_total_time
+    - avg_ttft
+    - avg_tpot
+    - avg_tps
+    - avg_total_throughput_tps
+    - system_output_tps
+    - system_total_tps
+    - total_output_tokens
+
+# Option A: explicit jobs list
+jobs:
+  - model: "deepseekv3_2"
+    concurrency: 1
+    count: 5
+    protocol: "openai"
+    base_url: "http://127.0.0.1:38077/v1"
+    api_key: "dummy"
+    stream: true
+    thinking: false
+    timeout: 300
+    prompt_length: 100
+
+  - model: "deepseekv3_2"
+    concurrency: 2
+    count: 10
+    protocol: "openai"
+    base_url: "http://127.0.0.1:38077/v1"
+    api_key: "dummy"
+    stream: true
+    thinking: false
+    timeout: 300
+    prompt_length: 100
+
+# Option B: matrix mode (uncomment and remove jobs if you prefer)
+# defaults:
+#   protocol: "openai"
+#   base_url: "http://127.0.0.1:38077/v1"
+#   api_key: "dummy"
+#   stream: true
+#   thinking: false
+#   timeout: 300
+#   prompt_length: 100
+# matrix:
+#   models: ["deepseekv3_2"]
+#   concurrencies: [1, 2, 4]
+#   counts: [5, 10]
