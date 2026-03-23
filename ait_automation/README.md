@@ -338,6 +338,39 @@ matrix:
 - 4 并发，5 请求
 - 4 并发，10 请求
 
+### `defaults + matrix.pairs`（推荐用于定制化组合）
+
+当你不希望跑“笛卡尔积全排列”，而是希望显式指定“哪些并发数对应哪些请求数”时，用 `matrix.pairs` 更合适：
+
+```yaml
+defaults:
+  protocol: "openai"
+  base_url: "http://127.0.0.1:38077/v1"
+  api_key: "dummy"
+  stream: true
+  thinking: false
+  timeout: 300
+  prompt_length: 100
+
+matrix:
+  models: ["deepseekv3_2"]
+  pairs:
+    - concurrency: 1
+      count: 5
+    - concurrency: 2
+      count: 10
+    - concurrency: 4
+      count: 10
+```
+
+这会展开为 3 个任务（按 `pairs` 顺序执行）：
+
+- 1 并发，5 请求
+- 2 并发，10 请求
+- 4 并发，10 请求
+
+注意：`matrix.pairs` 与 `matrix.concurrencies/counts` 是互斥的，不能混用。
+
 ## 使用方式
 
 ### 安装依赖

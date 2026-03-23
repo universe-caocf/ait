@@ -59,16 +59,55 @@ def _build_jobs(config: Dict[str, Any]) -> List[JobConfig]:
         raise ValueError("matrix must be a mapping when jobs is not provided")
 
     models = matrix.get("models", [])
+    pairs = matrix.get("pairs", [])
     concurrencies = matrix.get("concurrencies", [])
     counts = matrix.get("counts", [])
-    if not (models and concurrencies and counts):
-        raise ValueError("Provide jobs or matrix.models + matrix.concurrencies + matrix.counts")
 
     default = config.get("defaults", {})
     if not isinstance(default, dict):
         raise ValueError("defaults must be a mapping")
 
     jobs = []
+
+    if pairs:
+        # Paired mode: use explicit (concurrency,count) tuples rather than a Cartesian product.
+        if concurrencies or counts:
+            raise ValueError("matrix.pairs cannot be combined with matrix.concurrencies/matrix.counts")
+        if not models:
+            raise ValueError("Provide jobs or matrix.models + matrix.pairs")
+        if not isinstance(pairs, list) or not all(isinstance(x, dict) for x in pairs):
+            raise ValueError("matrix.pairs must be a list of mappings like {concurrency: <int>, count: <int>}")
+
+        for model, pair in itertools.product(models, pairs):
+            if "concurrency" not in pair or "count" not in pair:
+                raise ValueError("Each item in matrix.pairs must contain both 'concurrency' and 'count'")
+            jobs.append(
+                JobConfig(
+                    model=str(model),
+                    concurrency=int(pair["concurrency"]),
+                    count=int(pair["count"]),
+                    protocol=default.get("protocol"),
+                    base_url=default.get("base_url"),
+                    api_key=default.get("api_key"),
+                    stream=default.get("stream"),
+                    thinking=default.get("thinking"),
+                    timeout=default.get("timeout"),
+                    prompt=default.get("prompt"),
+                    prompt_file=default.get("prompt_file"),
+                    prompt_length=default.get("prompt_length"),
+                    interval_report=default.get("interval_report"),
+                    max_tokens=default.get("max_tokens"),
+                    temperature=default.get("temperature"),
+                    top_p=default.get("top_p"),
+                    top_k=default.get("top_k"),
+                )
+            )
+        return jobs
+
+    # Legacy matrix mode: Cartesian product.
+    if not (models and concurrencies and counts):
+        raise ValueError("Provide jobs or matrix.models + matrix.concurrencies + matrix.counts")
+
     for model, concurrency, count in itertools.product(models, concurrencies, counts):
         jobs.append(
             JobConfig(

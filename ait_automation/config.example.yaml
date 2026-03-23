@@ -67,3 +67,25 @@ jobs:
 #   models: ["deepseekv3_2"]
 #   concurrencies: [1, 2, 4]
 #   counts: [5, 10]
+
+# Option C: matrix.pairs mode (uncomment and remove jobs if you prefer)
+# Notes:
+# - Use pairs to specify (concurrency,count) tuples explicitly (no Cartesian product).
+# - Do not combine pairs with concurrencies/counts.
+# defaults:
+#   protocol: "openai"
+#   base_url: "http://127.0.0.1:38077/v1"
+#   api_key: "dummy"
+#   stream: true
+#   thinking: false
+#   timeout: 300
+#   prompt_length: 100
+# matrix:
+#   models: ["deepseekv3_2"]
+#   pairs:
+#     - concurrency: 1
+#       count: 5
+#     - concurrency: 2
+#       count: 10
+#     - concurrency: 4
+#       count: 10
