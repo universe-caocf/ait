@@ -6,19 +6,23 @@ import time
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Any, Dict, List, Sequence
 
 
 @dataclass
 class JobConfig:
-    model: str
-    concurrency: int
-    count: int
+    model: str | None = None
+    models: str | None = None
+    concurrency: int | None = None
+    count: int | None = None
+    version: bool | None = None
     protocol: str | None = None
     base_url: str | None = None
     api_key: str | None = None
     stream: bool | None = None
     thinking: bool | None = None
+    report: bool | None = None
+    log: bool | None = None
     timeout: int | None = None
     prompt: str | None = None
     prompt_file: str | None = None
@@ -28,6 +32,7 @@ class JobConfig:
     temperature: float | None = None
     top_p: float | None = None
     top_k: int | None = None
+    args: Dict[str, Any] | None = None
 
 
 @dataclass
@@ -67,22 +72,59 @@ class AITBenchmarkRunner:
             return f"--{name}={'true' if value else 'false'}"
         return f"--{name}={value}"
 
+    @staticmethod
+    def _has_glob(path_text: str) -> bool:
+        return any(ch in path_text for ch in ("*", "?", "["))
+
+    def _resolve_prompt_file_arg(self, prompt_file: str | None) -> str | None:
+        if not prompt_file:
+            return prompt_file
+
+        prompt_path = Path(prompt_file)
+        check_path = prompt_path if prompt_path.is_absolute() else (self.workdir / prompt_path)
+        if not self._has_glob(prompt_file) and check_path.is_dir():
+            return str(Path(prompt_file) / "*.txt")
+
+        return prompt_file
+
+    @staticmethod
+    def _normalize_flag_name(name: str) -> str:
+        return name.strip().replace("_", "-")
+
     def _build_job_args(self, job: JobConfig) -> List[str]:
-        args: List[str] = []
-        args.append(self._flag("model", job.model))
-        args.append(self._flag("concurrency", job.concurrency))
-        args.append(self._flag("count", job.count))
-        args.append(self._flag("report", True))
+        if job.prompt_length is not None and (job.prompt_file is not None or job.prompt is not None):
+            print(
+                "[WARN] prompt_length is set and will override prompt_file/prompt "
+                "(AIT priority: prompt-length > prompt-file > prompt)."
+            )
+
+        if job.model and job.models:
+            raise ValueError("Job config cannot set both model and models")
+        has_model_in_args = bool(job.args and ("model" in job.args or "models" in job.args))
+        if not job.model and not job.models and not has_model_in_args:
+            raise ValueError("Job config must set model/models (or pass them in args)")
+
+        resolved_prompt_file = self._resolve_prompt_file_arg(job.prompt_file)
+
+        # 保持历史行为：未显式配置 report 时默认开启，便于自动采集报告
+        report_value = True if job.report is None else job.report
 
         optional_map = {
+            "version": job.version,
+            "model": job.model,
+            "models": job.models,
+            "concurrency": job.concurrency,
+            "count": job.count,
+            "report": report_value,
             "protocol": job.protocol,
             "baseUrl": job.base_url,
             "apiKey": job.api_key,
             "stream": job.stream,
             "thinking": job.thinking,
+            "log": job.log,
             "timeout": job.timeout,
             "prompt": job.prompt,
-            "prompt-file": job.prompt_file,
+            "prompt-file": resolved_prompt_file,
             "prompt-length": job.prompt_length,
             "interval-report": job.interval_report,
             "max-tokens": job.max_tokens,
@@ -90,10 +132,21 @@ class AITBenchmarkRunner:
             "top-p": job.top_p,
             "top-k": job.top_k,
         }
+
+        args: List[str] = []
         for name, value in optional_map.items():
             if value is None:
                 continue
             args.append(self._flag(name, value))
+
+        # 通用透传参数，覆盖未来新增参数或尚未结构化的参数
+        if job.args:
+            for raw_name, value in job.args.items():
+                if value is None:
+                    continue
+                name = self._normalize_flag_name(str(raw_name))
+                args.append(self._flag(name, value))
+
         return args
 
     def run_job(self, job: JobConfig, index: int, total: int) -> RunResult:
@@ -101,7 +154,7 @@ class AITBenchmarkRunner:
         cmd = self.command + self._build_job_args(job)
 
         print(
-            f"[RUN {index}/{total}] start: model={job.model}, concurrency={job.concurrency}, "
+            f"[RUN {index}/{total}] start: model={job.model or job.models}, concurrency={job.concurrency}, "
             f"count={job.count}, stream={job.stream}, thinking={job.thinking}"
         )
         print(f"[RUN {index}/{total}] command: {' '.join(cmd)}")

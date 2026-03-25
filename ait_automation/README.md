@@ -289,13 +289,26 @@ jobs:
   - model: "deepseekv3_2"
     concurrency: 1
     count: 5
+    # 也支持 models（与 model 二选一）
+    # models: "deepseekv3_2,another_model"
     protocol: "openai"
     base_url: "http://127.0.0.1:38077/v1"
     api_key: "dummy"
     stream: true
     thinking: false
+    report: true
+    log: false
     timeout: 300
-    prompt_length: 100
+    prompt_file: "prompts" # 会自动转成 prompts/*.txt
+    interval_report: 60
+    max_tokens: 512
+    temperature: 0.7
+    top_p: 0.9
+    top_k: 50
+    # 通用透传（支持未来 AIT 新增参数）
+    # args:
+    #   prompt-file: "prompts/*.txt"
+    #   max-tokens: 1024
 
   - model: "deepseekv3_2"
     concurrency: 2
@@ -306,8 +319,14 @@ jobs:
     stream: true
     thinking: false
     timeout: 300
-    prompt_length: 100
+    prompt-file: "prompts/*.txt"
 ```
+
+补充说明：
+
+- `prompt_file` 和 `prompt-file` 都支持
+- `base_url/baseUrl`、`api_key/apiKey`、`top_p/top-p` 等下划线/中划线别名都支持
+- 若同时设置 `prompt_length` 和 `prompt_file/prompt`，AIT 会按原生优先级使用 `prompt_length`
 
 ### `defaults + matrix`
 
@@ -320,8 +339,16 @@ defaults:
   api_key: "dummy"
   stream: true
   thinking: false
+  report: true
+  log: false
   timeout: 300
-  prompt_length: 100
+  prompt_file: "prompts"
+  max_tokens: 512
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  args:
+    interval-report: 60
 
 matrix:
   models: ["deepseekv3_2"]
@@ -349,8 +376,16 @@ defaults:
   api_key: "dummy"
   stream: true
   thinking: false
+  report: true
+  log: false
   timeout: 300
-  prompt_length: 100
+  prompt_file: "prompts"
+  max_tokens: 512
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  args:
+    interval-report: 60
 
 matrix:
   models: ["deepseekv3_2"]

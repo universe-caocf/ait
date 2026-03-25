@@ -25,6 +25,20 @@ def load_yaml_config(path: Path) -> Dict[str, Any]:
 
 
 def _build_jobs(config: Dict[str, Any]) -> List[JobConfig]:
+    def _get_alias(item: Dict[str, Any], *keys: str) -> Any:
+        for key in keys:
+            if key in item:
+                return item.get(key)
+        return None
+
+    def _get_args(item: Dict[str, Any]) -> Dict[str, Any] | None:
+        raw = item.get("args")
+        if raw is None:
+            return None
+        if not isinstance(raw, dict):
+            raise ValueError("args must be a mapping/object")
+        return dict(raw)
+
     jobs_cfg = config.get("jobs")
     if isinstance(jobs_cfg, list) and jobs_cfg:
         jobs: List[JobConfig] = []
@@ -33,23 +47,28 @@ def _build_jobs(config: Dict[str, Any]) -> List[JobConfig]:
                 raise ValueError("Each item in jobs must be a mapping")
             jobs.append(
                 JobConfig(
-                    model=str(item["model"]),
-                    concurrency=int(item["concurrency"]),
-                    count=int(item["count"]),
+                    model=str(_get_alias(item, "model")) if _get_alias(item, "model") is not None else None,
+                    models=str(_get_alias(item, "models")) if _get_alias(item, "models") is not None else None,
+                    concurrency=int(item["concurrency"]) if item.get("concurrency") is not None else None,
+                    count=int(item["count"]) if item.get("count") is not None else None,
+                    version=_get_alias(item, "version"),
                     protocol=item.get("protocol"),
-                    base_url=item.get("base_url"),
-                    api_key=item.get("api_key"),
+                    base_url=_get_alias(item, "base_url", "baseUrl"),
+                    api_key=_get_alias(item, "api_key", "apiKey"),
                     stream=item.get("stream"),
                     thinking=item.get("thinking"),
+                    report=_get_alias(item, "report"),
+                    log=_get_alias(item, "log"),
                     timeout=item.get("timeout"),
-                    prompt=item.get("prompt"),
-                    prompt_file=item.get("prompt_file"),
-                    prompt_length=item.get("prompt_length"),
-                    interval_report=item.get("interval_report"),
-                    max_tokens=item.get("max_tokens"),
+                    prompt=_get_alias(item, "prompt"),
+                    prompt_file=_get_alias(item, "prompt_file", "prompt-file"),
+                    prompt_length=_get_alias(item, "prompt_length", "prompt-length"),
+                    interval_report=_get_alias(item, "interval_report", "interval-report"),
+                    max_tokens=_get_alias(item, "max_tokens", "max-tokens"),
                     temperature=item.get("temperature"),
-                    top_p=item.get("top_p"),
-                    top_k=item.get("top_k"),
+                    top_p=_get_alias(item, "top_p", "top-p"),
+                    top_k=_get_alias(item, "top_k", "top-k"),
+                    args=_get_args(item),
                 )
             )
         return jobs
@@ -86,20 +105,24 @@ def _build_jobs(config: Dict[str, Any]) -> List[JobConfig]:
                     model=str(model),
                     concurrency=int(pair["concurrency"]),
                     count=int(pair["count"]),
+                    version=_get_alias(default, "version"),
                     protocol=default.get("protocol"),
-                    base_url=default.get("base_url"),
-                    api_key=default.get("api_key"),
+                    base_url=_get_alias(default, "base_url", "baseUrl"),
+                    api_key=_get_alias(default, "api_key", "apiKey"),
                     stream=default.get("stream"),
                     thinking=default.get("thinking"),
+                    report=_get_alias(default, "report"),
+                    log=_get_alias(default, "log"),
                     timeout=default.get("timeout"),
-                    prompt=default.get("prompt"),
-                    prompt_file=default.get("prompt_file"),
-                    prompt_length=default.get("prompt_length"),
-                    interval_report=default.get("interval_report"),
-                    max_tokens=default.get("max_tokens"),
+                    prompt=_get_alias(default, "prompt"),
+                    prompt_file=_get_alias(default, "prompt_file", "prompt-file"),
+                    prompt_length=_get_alias(default, "prompt_length", "prompt-length"),
+                    interval_report=_get_alias(default, "interval_report", "interval-report"),
+                    max_tokens=_get_alias(default, "max_tokens", "max-tokens"),
                     temperature=default.get("temperature"),
-                    top_p=default.get("top_p"),
-                    top_k=default.get("top_k"),
+                    top_p=_get_alias(default, "top_p", "top-p"),
+                    top_k=_get_alias(default, "top_k", "top-k"),
+                    args=_get_args(default),
                 )
             )
         return jobs
@@ -114,20 +137,24 @@ def _build_jobs(config: Dict[str, Any]) -> List[JobConfig]:
                 model=str(model),
                 concurrency=int(concurrency),
                 count=int(count),
+                version=_get_alias(default, "version"),
                 protocol=default.get("protocol"),
-                base_url=default.get("base_url"),
-                api_key=default.get("api_key"),
+                base_url=_get_alias(default, "base_url", "baseUrl"),
+                api_key=_get_alias(default, "api_key", "apiKey"),
                 stream=default.get("stream"),
                 thinking=default.get("thinking"),
+                report=_get_alias(default, "report"),
+                log=_get_alias(default, "log"),
                 timeout=default.get("timeout"),
-                prompt=default.get("prompt"),
-                prompt_file=default.get("prompt_file"),
-                prompt_length=default.get("prompt_length"),
-                interval_report=default.get("interval_report"),
-                max_tokens=default.get("max_tokens"),
+                prompt=_get_alias(default, "prompt"),
+                prompt_file=_get_alias(default, "prompt_file", "prompt-file"),
+                prompt_length=_get_alias(default, "prompt_length", "prompt-length"),
+                interval_report=_get_alias(default, "interval_report", "interval-report"),
+                max_tokens=_get_alias(default, "max_tokens", "max-tokens"),
                 temperature=default.get("temperature"),
-                top_p=default.get("top_p"),
-                top_k=default.get("top_k"),
+                top_p=_get_alias(default, "top_p", "top-p"),
+                top_k=_get_alias(default, "top_k", "top-k"),
+                args=_get_args(default),
             )
         )
     return jobs
@@ -166,7 +193,7 @@ def run_workflow(config_path: Path, dry_run: bool = False) -> int:
     if dry_run:
         for i, job in enumerate(jobs, 1):
             print(
-                f"[DRY-RUN {i}/{total}] model={job.model}, concurrency={job.concurrency}, "
+                f"[DRY-RUN {i}/{total}] model={job.model or job.models}, concurrency={job.concurrency}, "
                 f"count={job.count}, protocol={job.protocol}, base_url={job.base_url}"
             )
         return 0

@@ -35,13 +35,34 @@ jobs:
   - model: "deepseekv3_2"
     concurrency: 1
     count: 5
+    # 下面这些字段与 AIT 参数一一对应
+    # models: "deepseekv3_2,another_model"
+    # version: false
     protocol: "openai"
     base_url: "http://127.0.0.1:38077/v1"
     api_key: "dummy"
     stream: true
     thinking: false
+    report: true
+    log: false
     timeout: 300
-    prompt_length: 100
+    # prompt: "请总结下面内容"
+    # 三种写法都支持：
+    # 1) 单文件: "prompts/case1.txt"
+    # 2) 通配符: "prompts/*.txt"
+    # 3) 目录: "prompts"  (会自动转换为 prompts/*.txt)
+    prompt_file: "prompts"
+    # prompt_length: 100
+    interval_report: 60
+    max_tokens: 512
+    temperature: 0.7
+    top_p: 0.9
+    top_k: 50
+    # 透传任意 AIT 参数（支持未来新增参数）
+    # args:
+    #   stream: true
+    #   prompt-file: "prompts/*.txt"
+    #   max-tokens: 1024
 
   - model: "deepseekv3_2"
     concurrency: 2
@@ -52,7 +73,7 @@ jobs:
     stream: true
     thinking: false
     timeout: 300
-    prompt_length: 100
+    prompt-file: "prompts/*.txt"
 
 # Option B: matrix mode (uncomment and remove jobs if you prefer)
 # defaults:
@@ -61,8 +82,16 @@ jobs:
 #   api_key: "dummy"
 #   stream: true
 #   thinking: false
+#   report: true
+#   log: false
 #   timeout: 300
-#   prompt_length: 100
+#   prompt_file: "prompts"
+#   max_tokens: 512
+#   temperature: 0.7
+#   top_p: 0.9
+#   top_k: 50
+#   args:
+#     interval-report: 60
 # matrix:
 #   models: ["deepseekv3_2"]
 #   concurrencies: [1, 2, 4]
@@ -78,8 +107,16 @@ jobs:
 #   api_key: "dummy"
 #   stream: true
 #   thinking: false
+#   report: true
+#   log: false
 #   timeout: 300
-#   prompt_length: 100
+#   prompt_file: "prompts"
+#   max_tokens: 512
+#   temperature: 0.7
+#   top_p: 0.9
+#   top_k: 50
+#   args:
+#     interval-report: 60
 # matrix:
 #   models: ["deepseekv3_2"]
 #   pairs:
