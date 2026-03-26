@@ -500,6 +500,22 @@ func (c *OpenAIClient) Request(prompt string, stream bool) (*ResponseMetrics, er
 
 		if resp.StatusCode != http.StatusOK {
 			responseData, _ := io.ReadAll(resp.Body)
+			responseBody := string(responseData)
+
+			// 记录HTTP错误响应日志
+			if c.logger != nil && c.logger.IsEnabled() {
+				headers := make(map[string]string)
+				for k, v := range resp.Header {
+					headers[k] = strings.Join(v, ", ")
+				}
+
+				c.logger.LogResponse(c.Model, logger.ResponseData{
+					StatusCode: resp.StatusCode,
+					Headers:    headers,
+					Body:       responseBody,
+					Error:      fmt.Sprintf("HTTP %d Error", resp.StatusCode),
+				})
+			}
 
 			// 尝试解析 OpenAI API 的错误响应
 			var errorResp OpenAIErrorResponse
@@ -542,6 +558,21 @@ func (c *OpenAIClient) Request(prompt string, stream bool) (*ResponseMetrics, er
 		}
 
 		totalTime := time.Since(t0)
+		responseBody := string(responseData)
+
+		// 记录响应日志
+		if c.logger != nil && c.logger.IsEnabled() {
+			headers := make(map[string]string)
+			for k, v := range resp.Header {
+				headers[k] = strings.Join(v, ", ")
+			}
+
+			c.logger.LogResponse(c.Model, logger.ResponseData{
+				StatusCode: resp.StatusCode,
+				Headers:    headers,
+				Body:       responseBody,
+			})
+		}
 
 		// 检查空响应
 		if len(responseData) == 0 {
@@ -579,6 +610,23 @@ func (c *OpenAIClient) Request(prompt string, stream bool) (*ResponseMetrics, er
 		}
 
 		thinkingTokens := extractThinkingTokens(chatResp.Usage.CompletionTokensDetails)
+
+		// 记录测试完成日志
+		if c.logger != nil && c.logger.IsEnabled() {
+			var contentText string
+			if len(chatResp.Choices) > 0 {
+				contentText = chatResp.Choices[0].Message.Content
+			}
+
+			c.logger.LogTestEnd(c.Model, map[string]interface{}{
+				"total_time":        totalTime.String(),
+				"prompt_tokens":     chatResp.Usage.PromptTokens,
+				"completion_tokens": chatResp.Usage.CompletionTokens,
+				"thinking_tokens":   thinkingTokens,
+				"response_id":       chatResp.ID,
+				"content_length":    len(contentText),
+			})
+		}
 
 		return &ResponseMetrics{
 			TimeToFirstToken: totalTime, // 非流式模式下，所有token一次性返回，TTFT等于总时间
