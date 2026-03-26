@@ -28,7 +28,25 @@
 - [workflow.py](/Users/universe/Documents/projects/ait/ait_automation/workflow.py)：自动化总编排
 - [benchmark_runner.py](/Users/universe/Documents/projects/ait/ait_automation/benchmark_runner.py)：批量运行 AIT
 - [report_to_excel.py](/Users/universe/Documents/projects/ait/ait_automation/report_to_excel.py)：报告采集与汇总
+- [generate_prompt_by_length.go](/Users/universe/Documents/projects/ait/ait_automation/generate_prompt_by_length.go)：导出与 `ait --prompt-length` 完全一致的测试 prompt
 - [config.example.yaml](/Users/universe/Documents/projects/ait/ait_automation/config.example.yaml)：示例配置
+
+## 导出指定长度 Prompt
+
+如果你想单独拿到 AIT 内部 `--prompt-length` 生成的 prompt 内容，可以直接运行这个 Go 脚本。它会复用 `internal/prompt.GeneratePromptByLength()`，因此输出与 AIT CLI 保持一致。
+
+示例：
+
+```bash
+go run ./ait_automation/generate_prompt_by_length.go --length 500
+go run ./ait_automation/generate_prompt_by_length.go --length 500 --output ./tmp/prompt_500.txt
+```
+
+行为说明：
+
+- `--length` 为必填，含义与 AIT 一致，按 Unicode 字符数（rune）计数
+- `--output` 可选；不传时默认输出到 `ait_automation/generated_prompt_<length>.txt`
+- 输出文件内容仅包含 prompt 本身，不附加额外元数据
 
 ## 自动化流程原理
 
